@@ -12,4 +12,7 @@ train-rnn-sentiment-classifier:
 	@echo "This may take a while, so grab a coffee! ☕"
 	@echo "Logs and output will be displayed below 👇"
 	@echo "==============================================="
-	PYTHONPATH=. python3 training_scripts/sentiment_classification_rnn.py
+	PYTHONPATH=. python3 training_scripts/rnn_classifier.py
+
+train-rnn-lm:
+	PYTHONPATH=. python3 training_scripts/rnn_lm.py
