@@ -29,3 +29,4 @@ class DATASETS:
     TEXT_CLASSIFICATION_X: str = "data/sarcasm_detection/texts.txt"
     TEXT_CLASSIFICATION_Y: str = "data/sarcasm_detection/labels.txt"
     GOT_BOOK_LANGUAGE_MODELLING: str = "data/got/GOT.txt"
+    TINY_SHAKESPERE_DATASET: str = "data/shakespere/tiny.txt"
