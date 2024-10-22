@@ -28,11 +28,11 @@ class Hyperparams:
 
     EMBEDDING_DIM: int = 256
     RNN_HIDDEN_SIZE: int = 256
-    RNN_LAYERS: int = 4
-    LABEL_SMOOTHING: float = 0.0
+    RNN_LAYERS: int = 8
+    LABEL_SMOOTHING: float = 0.1
 
     STEPS: int = 10000
-    BATCH_SIZE: int = 8
+    BATCH_SIZE: int = 256
     DEVICE: str = choose_device()
 
 
@@ -168,8 +168,6 @@ for step in range(1, hyperparams.STEPS + 1):
     optimizer.step()
     optimizer.zero_grad()
 
-    step += 1
-
     print(
         f"Step: {step}|{hyperparams.STEPS}, Loss: {loss.item()}, Perplexity: {torch.exp(loss)}"
     )
@@ -204,7 +202,4 @@ for step in range(1, hyperparams.STEPS + 1):
             predicted_token = id_to_token.get(predicted_token_id, hyperparams.OOV_TOKEN)
             generated_tokens.append(predicted_token_id)
 
-        generated_text = [
-            id_to_token.get(token, hyperparams.OOV_TOKEN) for token in generated_tokens
-        ]
-        print("Sampled text:", "".join(generated_text), "\n")
+        print("Sampled text:", decode(generated_tokens))
