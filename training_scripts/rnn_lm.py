@@ -28,11 +28,12 @@ class Hyperparams:
 
     EMBEDDING_DIM: int = 256
     RNN_HIDDEN_SIZE: int = 256
-    RNN_LAYERS: int = 8
+    RNN_LAYERS: int = 32
     LABEL_SMOOTHING: float = 0.1
+    LEARNING_RATE: float = 0.0001
 
     STEPS: int = 10000
-    BATCH_SIZE: int = 256
+    BATCH_SIZE: int = 8
     DEVICE: str = choose_device()
 
 
@@ -146,7 +147,7 @@ logger.info("Done")
 
 print(model)
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams.LEARNING_RATE)
 criterion = nn.CrossEntropyLoss(label_smoothing=hyperparams.LABEL_SMOOTHING)
 
 
@@ -193,12 +194,14 @@ for step in range(1, hyperparams.STEPS + 1):
         )
         generated_tokens = [token_to_id.get(random_token, hyperparams.OOV_TOKEN_ID)]
         print("Prefix: ", random_token)
-        for _ in range(hyperparams.BLOCK_SIZE):
+        for pos in range(hyperparams.BLOCK_SIZE):
             generated_tensor = (
                 torch.tensor(generated_tokens).unsqueeze(0).to(hyperparams.DEVICE)
             )
-            inference_output = model(generated_tensor)
-            predicted_token_id = torch.argmax(inference_output[:, -1, :], dim=-1).item()
+            hidden_states = model(generated_tensor)
+            logits = hidden_states[:, -1, :]
+            probabilities = torch.softmax(logits, dim=-1)
+            predicted_token_id = torch.argmax(probabilities, dim=-1).item()
             predicted_token = id_to_token.get(predicted_token_id, hyperparams.OOV_TOKEN)
             generated_tokens.append(predicted_token_id)
 
