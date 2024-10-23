@@ -25,6 +25,12 @@ def batch_data(source, target, batch_size):
 
 
 @dataclass
+class PATHS:
+    RECURRENT_LM_SAVE_PATH: str = "models/rnn-lm.pth"
+    RECURRENT_LM_TOKENIZER_SAVE_PATH: str = "models/tokenizer.json"
+
+
+@dataclass
 class DATASETS:
     TEXT_CLASSIFICATION_X: str = "data/sarcasm_detection/texts.txt"
     TEXT_CLASSIFICATION_Y: str = "data/sarcasm_detection/labels.txt"

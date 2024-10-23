@@ -1,3 +1,4 @@
+import json
 import random
 import re
 import time
@@ -9,19 +10,20 @@ import torch
 from loguru import logger
 from torch import nn
 
-from app.common import DATASETS, choose_device
+from app.common import DATASETS, PATHS, choose_device
 
 torch.manual_seed(1337)
+torch.set_float32_matmul_precision("high")
 
 logger.info("Reading the text corpus...")
-with open(DATASETS.GOT_BOOK_LANGUAGE_MODELLING, "r") as file:
+with open(DATASETS.TINY_SHAKESPERE_DATASET, "r") as file:
     content = file.read()
 logger.info("Done")
 
 
 @dataclass
 class Hyperparams:
-    VOCAB_SIZE: int = 16384
+    VOCAB_SIZE: int = 11474  # 11925
     SPLITTING_PATTERN: str = r"\w+|[^\w\s]|\s+"
     OOV_TOKEN: str = "<UNK>"
     OOV_TOKEN_ID: int = 1
@@ -34,8 +36,8 @@ class Hyperparams:
     LABEL_SMOOTHING: float = 0.1
     LEARNING_RATE: float = 0.001
 
-    STEPS: int = 10000
-    BATCH_SIZE: int = 32
+    STEPS: int = 4500
+    BATCH_SIZE: int = 256
     DEVICE: str = choose_device()
 
 
@@ -54,6 +56,7 @@ def build_vocab(corpus: List, vocab_size: int, oov_token: str, oov_token_id: int
     """Build a vocabulary and assigned id to token based on frequency"""
     # Tokenization to get tokens from text
     all_tokens = split_into_tokens(corpus)
+    logger.info(f"Total tokens in dataset: {len(set(all_tokens))}")
     # Choosing the topK tokens, topK is the vocab_size
     freq_tokens = Counter(all_tokens).most_common(vocab_size)
     # Each tokens will have an unique id
@@ -147,7 +150,7 @@ logger.info("Done")
 
 print(model)
 
-optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams.LEARNING_RATE)
+optimizer = torch.optim.AdamW(model.parameters(), lr=hyperparams.LEARNING_RATE)
 criterion = nn.CrossEntropyLoss(label_smoothing=hyperparams.LABEL_SMOOTHING)
 
 logger.info(f"Choosing batch size: {hyperparams.BATCH_SIZE}...")
@@ -183,7 +186,7 @@ for step in range(1, hyperparams.STEPS + 1):
     tok_per_sec = int(torch.numel(x) // (time.time() - start))
 
     print(
-        f"Step: {step}|{hyperparams.STEPS}, Loss: {loss.item()}, Perplexity: {torch.exp(loss)}, tok/sec: {tok_per_sec}"
+        f"Step: {step}|{hyperparams.STEPS}, Loss: {loss.item()}, Perplexity: {torch.exp(loss)}, Tok/sec: {tok_per_sec}"
     )
 
     model.eval()
@@ -203,3 +206,12 @@ for step in range(1, hyperparams.STEPS + 1):
             generated_tokens.append(predicted_token_id)
 
         print("Sampled text:", decode(generated_tokens), "\n")
+
+
+logger.info("Saving the model and tokenizer dict...")
+torch.save(model.state_dict(), PATHS.RECURRENT_LM_SAVE_PATH)
+
+with open(PATHS.RECURRENT_LM_TOKENIZER_SAVE_PATH, "w") as file:
+    json.dump(token_to_id, file, indent=4)
+
+logger.info("Saved! Exiting...")
