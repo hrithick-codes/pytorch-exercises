@@ -1,5 +1,6 @@
 import random
 import re
+import time
 from collections import Counter
 from dataclasses import dataclass
 from typing import List
@@ -20,24 +21,29 @@ logger.info("Done")
 
 @dataclass
 class Hyperparams:
-    VOCAB_SIZE: int = 24000
+    VOCAB_SIZE: int = 16384
     SPLITTING_PATTERN: str = r"\w+|[^\w\s]|\s+"
     OOV_TOKEN: str = "<UNK>"
     OOV_TOKEN_ID: int = 1
     BLOCK_SIZE: int = 64
+    DO_LOWERCASE: str = True
 
     EMBEDDING_DIM: int = 256
-    RNN_HIDDEN_SIZE: int = 256
-    RNN_LAYERS: int = 32
+    HIDDEN_SIZE: int = 256
+    NUM_LAYERS: int = 16
     LABEL_SMOOTHING: float = 0.1
-    LEARNING_RATE: float = 0.0001
+    LEARNING_RATE: float = 0.001
 
     STEPS: int = 10000
-    BATCH_SIZE: int = 8
+    BATCH_SIZE: int = 32
     DEVICE: str = choose_device()
 
 
 hyperparams = Hyperparams()
+if hyperparams.DO_LOWERCASE:
+    logger.info("Converting into lower case...")
+    content = content.lower()
+    logger.info("Done.")
 
 
 def split_into_tokens(text):
@@ -65,7 +71,10 @@ def build_vocab(corpus: List, vocab_size: int, oov_token: str, oov_token_id: int
 
 logger.info("Building vocabulary...")
 token_to_id, id_to_token = build_vocab(
-    content, hyperparams.VOCAB_SIZE, hyperparams.OOV_TOKEN, hyperparams.OOV_TOKEN_ID
+    content,
+    hyperparams.VOCAB_SIZE,
+    hyperparams.OOV_TOKEN,
+    hyperparams.OOV_TOKEN_ID,
 )
 logger.info("Done.")
 
@@ -98,48 +107,39 @@ def get_batch():
     return x, y
 
 
-class RNNLanguageModel(nn.Module):
+class LanguageModel(nn.Module):
     def __init__(
         self,
         vocab_size: int,
         embedding_dim: int,
-        rnn_hidden_size: int,
+        hidden_size: int,
     ):
-        super(RNNLanguageModel, self).__init__()
+        super(LanguageModel, self).__init__()
         self._embedding_layer = nn.Embedding(
             num_embeddings=vocab_size,
             embedding_dim=embedding_dim,
         )
-        # self._rnn = nn.RNN(
-        #     input_size=embedding_dim,
-        #     hidden_size=rnn_hidden_size,
-        #     num_layers=hyperparams.RNN_LAYERS,
-        #     batch_first=True,
-        #     nonlinearity="relu",
-        #     bias=False,
-        # )
-        self._rnn = nn.GRU(
+        self._recurrent_model = nn.LSTM(
             input_size=embedding_dim,
-            hidden_size=rnn_hidden_size,
-            num_layers=hyperparams.RNN_LAYERS,
+            hidden_size=hidden_size,
+            num_layers=hyperparams.NUM_LAYERS,
             batch_first=True,
-            bias=False,
+            bias=True,
         )
 
-        self._fc = nn.Linear(rnn_hidden_size, vocab_size, bias=False)
-        # share weights between the fc and embedding layer
+        self._fc = nn.Linear(hidden_size, vocab_size, bias=False)
         self._fc.weight = self._embedding_layer.weight
 
     def forward(self, x):
         x = self._embedding_layer(x)
-        hidden_states, _ = self._rnn(x)
+        hidden_states, _ = self._recurrent_model(x)
         logits = self._fc(hidden_states)
         return logits
 
 
 logger.info("Initializing the model...")
-model = RNNLanguageModel(
-    hyperparams.VOCAB_SIZE, hyperparams.EMBEDDING_DIM, hyperparams.RNN_HIDDEN_SIZE
+model = LanguageModel(
+    hyperparams.VOCAB_SIZE, hyperparams.EMBEDDING_DIM, hyperparams.HIDDEN_SIZE
 )
 model = model.to(hyperparams.DEVICE)
 model = torch.compile(model)
@@ -150,12 +150,22 @@ print(model)
 optimizer = torch.optim.Adam(model.parameters(), lr=hyperparams.LEARNING_RATE)
 criterion = nn.CrossEntropyLoss(label_smoothing=hyperparams.LABEL_SMOOTHING)
 
+logger.info(f"Choosing batch size: {hyperparams.BATCH_SIZE}...")
+logger.info("Starting training...")
+
+x_, y_ = get_batch()
+print("Input")
+print(x_)
+print("Target")
+print(y_)
+
 
 for step in range(1, hyperparams.STEPS + 1):
     model.train()
+    start = time.time()
     x, y = get_batch()
     x = x.to(hyperparams.DEVICE)
-    y = x.to(hyperparams.DEVICE)
+    y = y.to(hyperparams.DEVICE)
 
     logits = model(x)
 
@@ -166,32 +176,19 @@ for step in range(1, hyperparams.STEPS + 1):
     loss = criterion(logits, target)
 
     loss.backward()
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
     optimizer.step()
     optimizer.zero_grad()
 
+    tok_per_sec = int(torch.numel(x) // (time.time() - start))
+
     print(
-        f"Step: {step}|{hyperparams.STEPS}, Loss: {loss.item()}, Perplexity: {torch.exp(loss)}"
+        f"Step: {step}|{hyperparams.STEPS}, Loss: {loss.item()}, Perplexity: {torch.exp(loss)}, tok/sec: {tok_per_sec}"
     )
 
     model.eval()
     with torch.no_grad():
-        random_token = random.choice(
-            [
-                "Winter",
-                "Dragon",
-                "Throne",
-                "Targaryen",
-                "Stark",
-                "Lannister",
-                "Night",
-                "Walkers",
-                "Jon",
-                "Daenerys",
-                "King",
-                "Queen",
-                "Lord",
-            ]
-        )
+        random_token = random.choice(list(token_to_id.keys()))
         generated_tokens = [token_to_id.get(random_token, hyperparams.OOV_TOKEN_ID)]
         print("Prefix: ", random_token)
         for pos in range(hyperparams.BLOCK_SIZE):
@@ -201,8 +198,8 @@ for step in range(1, hyperparams.STEPS + 1):
             hidden_states = model(generated_tensor)
             logits = hidden_states[:, -1, :]
             probabilities = torch.softmax(logits, dim=-1)
-            predicted_token_id = torch.argmax(probabilities, dim=-1).item()
+            predicted_token_id = torch.multinomial(probabilities, num_samples=1).item()
             predicted_token = id_to_token.get(predicted_token_id, hyperparams.OOV_TOKEN)
             generated_tokens.append(predicted_token_id)
 
-        print("Sampled text:", decode(generated_tokens))
+        print("Sampled text:", decode(generated_tokens), "\n")
