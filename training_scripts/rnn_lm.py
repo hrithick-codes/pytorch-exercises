@@ -23,12 +23,12 @@ logger.info("Done")
 
 @dataclass
 class Hyperparams:
-    VOCAB_SIZE: int = 11474  # 11925
+    VOCAB_SIZE: int = 13339
     SPLITTING_PATTERN: str = r"\w+|[^\w\s]|\s+"
     OOV_TOKEN: str = "<UNK>"
     OOV_TOKEN_ID: int = 1
     BLOCK_SIZE: int = 64
-    DO_LOWERCASE: str = True
+    DO_LOWERCASE: str = False
 
     EMBEDDING_DIM: int = 256
     HIDDEN_SIZE: int = 256
