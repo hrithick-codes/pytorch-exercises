@@ -1,4 +1,3 @@
-import json
 import random
 import time
 from collections import Counter
@@ -10,17 +9,19 @@ from loguru import logger
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
-from app.common import DATASETS, choose_device
+from app.config import Config
+from utils.helpers import get_device
 
 random.seed(1337)
 torch.manual_seed(1337)
 
+config = Config()
 
 logger.info("Reading datasets...")
-with open(DATASETS.TEXT_CLASSIFICATION_Y, "r") as file:
+with open(config.TEXT_CLASSIFICATION_Y, "r") as file:
     labels = file.read()
 
-with open(DATASETS.TEXT_CLASSIFICATION_X, "r") as file:
+with open(config.TEXT_CLASSIFICATION_X, "r") as file:
     reviews = file.read()
 
 logger.info("Splitting into samples...")
@@ -57,9 +58,8 @@ class Hyperparams:
     EPOCHS: int = 10
 
     # Hardware
-    DEVICE = choose_device()
+    DEVICE = get_device()
     WARM_UP_ON_GPU: bool = True
-
     MODEL_SAVE_PATH: str = "models/sarcasm_rnn.pth"
 
 
@@ -78,7 +78,9 @@ def build_vocab(
     freq_tokens = Counter(tokens).most_common(vocab_size)
     token_to_id = {
         token: iid
-        for iid, (token, count) in enumerate(freq_tokens, start=oov_token_id + 1)
+        for iid, (token, count) in enumerate(
+            freq_tokens, start=oov_token_id + 1
+        )  # noqa: E501
     }
     id_to_token = {id: token for token, id in token_to_id.items()}
 
@@ -101,8 +103,8 @@ test_size = num_samples - (train_size + val_size)
 train_sequences = sequences[0:train_size]
 train_labels = labels[0:train_size]
 
-val_sequences = sequences[train_size : train_size + val_size]
-val_labels = labels[train_size : train_size + val_size]
+val_sequences = sequences[train_size : train_size + val_size]  # noqa
+val_labels = labels[train_size : train_size + val_size]  # noqa
 
 test_sequences = sequences[-test_size:]
 test_labels = labels[-test_size:]
@@ -124,9 +126,6 @@ vocab, token_to_id, id_to_token = build_vocab(
     hyperparams.PAD_TOKEN,
     hyperparams.PAD_TOKEN_ID,
 )
-with open("models/tokens_to_id.json", "w") as file:
-    json.dump(token_to_id, file, indent=4)
-logger.info("Done")
 
 
 def detokenize(ids, id_to_token=id_to_token):
@@ -185,10 +184,14 @@ def collate_fn(batch):
     inputs, targets = zip(*batch)
     num_samples = len(inputs)
     # padding the inputs
-    padded_inputs = torch.zeros(num_samples, hyperparams.MAX_LENGHT, dtype=torch.long)
+    padded_inputs = torch.zeros(
+        num_samples, hyperparams.MAX_LENGHT, dtype=torch.long
+    )  # noqa: E501
     for i, token_ids in enumerate(inputs):
         length = len(token_ids)
-        padded_inputs[i, :length] = torch.tensor(token_ids[: hyperparams.MAX_LENGHT])
+        padded_inputs[i, :length] = torch.tensor(
+            token_ids[: hyperparams.MAX_LENGHT]
+        )  # noqa: E501
 
     return padded_inputs, torch.tensor(targets, dtype=torch.float32)
 
@@ -232,7 +235,9 @@ class RNNClassifier(nn.Module):
             bias=False,
         )
         self._linear_linear = nn.Linear(
-            in_features=rnn_hidden_size, out_features=num_neurons_in_linear, bias=False
+            in_features=rnn_hidden_size,
+            out_features=num_neurons_in_linear,
+            bias=False,  # noqa: E501
         )
         self._relu = nn.ReLU()
         self._output_layer = nn.Linear(
@@ -257,11 +262,11 @@ model = RNNClassifier(
     num_neurons_in_linear=hyperparams.LINEAR_NEURONS,
 )
 logger.info(model)
-logger.info(f"Moving the model to {hyperparams.DEVICE}")
+logger.info("Moving the model to {hyperparams.DEVICE}")
 model = model.to(hyperparams.DEVICE)
-logger.info(f"Compiling using torch.compile()...")
+logger.info("Compiling using torch.compile()...")
 model = torch.compile(model)
-logger.info(f"Done!")
+logger.info("Done!")
 
 # Put the model on training mode
 model.train()
@@ -289,7 +294,7 @@ if hyperparams.WARM_UP_ON_GPU and hyperparams.DEVICE in ("cuda", "mps"):
 
 
 if hyperparams.OVERFIT_SINGLE_BATCH:
-    logger.info(f"Overfitting a single batch...")
+    logger.info("Overfitting a single batch...")
     start = time.time()
     bce_loss = float("inf")
     iter_count = 1
@@ -305,7 +310,7 @@ if hyperparams.OVERFIT_SINGLE_BATCH:
         optim.zero_grad()
         iter_count += 1
     print(
-        f"Batch overfitted. Time Taken: {time.time() - start}. Took {iter_count} iterations."
+        f"Batch overfitted. Time Taken: {time.time() - start}. Took {iter_count} iterations."  # noqa
     )
     logger.info("Done")
     import sys
@@ -323,7 +328,9 @@ for epoch in range(hyperparams.EPOCHS):
     correct_train_preds = 0
     total_train_preds = 0
 
-    print(f"Epoch [{epoch+1}/{hyperparams.EPOCHS}] - Starting training phase...")
+    print(
+        f"Epoch [{epoch+1}/{hyperparams.EPOCHS}] - Starting training phase..."
+    )  # noqa: E501
 
     for batch_idx, batch in enumerate(train_dataloader):
         inputs, targets = batch
@@ -351,13 +358,13 @@ for epoch in range(hyperparams.EPOCHS):
             avg_batch_loss = total_train_loss / (batch_idx + 1)
             batch_accuracy = correct_train_preds / total_train_preds
             print(
-                f"Batch [{batch_idx+1}/{len(train_dataloader)}], Batch Loss: {avg_batch_loss:.4f}, Batch Accuracy: {batch_accuracy:.4f}"
+                f"Batch [{batch_idx+1}/{len(train_dataloader)}], Batch Loss: {avg_batch_loss:.4f}, Batch Accuracy: {batch_accuracy:.4f}"  # noqa: E501
             )
 
     avg_train_loss = total_train_loss / len(train_dataloader)
     train_accuracy = correct_train_preds / total_train_preds
     print(
-        f"Epoch [{epoch+1}/{hyperparams.EPOCHS}] completed. Train Loss: {avg_train_loss:.4f}, Train Accuracy: {train_accuracy:.4f}"
+        f"Epoch [{epoch+1}/{hyperparams.EPOCHS}] completed. Train Loss: {avg_train_loss:.4f}, Train Accuracy: {train_accuracy:.4f}"  # noqa: E501
     )
 
     # Validation phase
@@ -366,7 +373,9 @@ for epoch in range(hyperparams.EPOCHS):
     correct_val_preds = 0
     total_val_preds = 0
 
-    print(f"Epoch [{epoch+1}/{hyperparams.EPOCHS}] - Starting validation phase...")
+    print(
+        "Epoch [{epoch+1}/{hyperparams.EPOCHS}] - Starting validation phase..."
+    )  # noqa: E501
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(val_dataloader):
@@ -389,8 +398,8 @@ for epoch in range(hyperparams.EPOCHS):
                 avg_val_batch_loss = total_val_loss / (batch_idx + 1)
                 val_batch_accuracy = correct_val_preds / total_val_preds
                 print(
-                    f"Epoch [{epoch+1}/{hyperparams.EPOCHS}], Val Batch [{batch_idx+1}/{len(val_dataloader)}], "
-                    f"Val Batch Loss: {avg_val_batch_loss:.4f}, Val Batch Accuracy: {val_batch_accuracy:.4f}"
+                    f"Epoch [{epoch+1}/{hyperparams.EPOCHS}], Val Batch [{batch_idx+1}/{len(val_dataloader)}], "  # noqa: E501
+                    f"Val Batch Loss: {avg_val_batch_loss:.4f}, Val Batch Accuracy: {val_batch_accuracy:.4f}"  # noqa: E501
                 )
 
     avg_val_loss = total_val_loss / len(val_dataloader)
@@ -398,14 +407,14 @@ for epoch in range(hyperparams.EPOCHS):
 
     if val_accuracy > best_val_accuracy:
         logger.info(
-            f"Validation accuracy increased from {best_val_accuracy} to {val_accuracy}"
+            f"Validation accuracy increased from {best_val_accuracy} to {val_accuracy}"  # noqa: E501
         )
         best_val_accuracy = val_accuracy
         torch.save(model.state_dict(), hyperparams.MODEL_SAVE_PATH)
         logger.info("Model saved.")
 
     print(
-        f"Epoch [{epoch+1}/{hyperparams.EPOCHS}] completed. Val Loss: {avg_val_loss:.4f}, Val Accuracy: {val_accuracy:.4f}"
+        f"Epoch [{epoch+1}/{hyperparams.EPOCHS}] completed. Val Loss: {avg_val_loss:.4f}, Val Accuracy: {val_accuracy:.4f}"  # noqa: E501
     )
 
 logger.info("Validating on unseen data...")
@@ -433,7 +442,9 @@ model.eval()
 while True:
     input_string = input("Enter the text: ")
     tokens = input_string.strip().split(" ")
-    input_ids = [token_to_id.get(token, hyperparams.OOV_TOKEN_ID) for token in tokens]
+    input_ids = [
+        token_to_id.get(token, hyperparams.OOV_TOKEN_ID) for token in tokens
+    ]  # noqa: E501
     input_tensor = torch.tensor(input_ids).unsqueeze(dim=0)
     input_tensor = input_tensor.to(hyperparams.DEVICE)
     print("Tokens: ", tokens)

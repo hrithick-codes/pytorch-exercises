@@ -10,15 +10,11 @@ import torch
 from loguru import logger
 from torch import nn
 
-from app.common import DATASETS, PATHS, choose_device
+from app.config import Config
+from utils.helpers import get_device
 
 torch.manual_seed(1337)
 torch.set_float32_matmul_precision("high")
-
-logger.info("Reading the text corpus...")
-with open(DATASETS.TINY_SHAKESPERE_DATASET, "r") as file:
-    content = file.read()
-logger.info("Done")
 
 
 @dataclass
@@ -36,12 +32,20 @@ class Hyperparams:
     LABEL_SMOOTHING: float = 0.1
     LEARNING_RATE: float = 0.001
 
-    STEPS: int = 4500
+    STEPS: int = 10000
     BATCH_SIZE: int = 256
-    DEVICE: str = choose_device()
+    DEVICE: str = get_device()
 
 
+config = Config()
 hyperparams = Hyperparams()
+
+logger.info("Reading the text corpus...")
+with open(config.TINY_SHAKESPERE_DATASET, "r") as file:
+    content = file.read()
+logger.info("Done")
+
+
 if hyperparams.DO_LOWERCASE:
     logger.info("Converting into lower case...")
     content = content.lower()
@@ -52,16 +56,19 @@ def split_into_tokens(text):
     return re.findall(hyperparams.SPLITTING_PATTERN, text)
 
 
-def build_vocab(corpus: List, vocab_size: int, oov_token: str, oov_token_id: int):
+def build_vocab(
+    corpus: List, vocab_size: int, oov_token: str, oov_token_id: int
+):  # noqa: E501
     """Build a vocabulary and assigned id to token based on frequency"""
     # Tokenization to get tokens from text
     all_tokens = split_into_tokens(corpus)
-    logger.info(f"Total tokens in dataset: {len(set(all_tokens))}")
+    logger.info(f"Total tokens in dataset: {len(set(all_tokens)) + 1}")
     # Choosing the topK tokens, topK is the vocab_size
     freq_tokens = Counter(all_tokens).most_common(vocab_size)
     # Each tokens will have an unique id
     token_to_id = {
-        token: iid for iid, (token, _) in enumerate(freq_tokens, start=oov_token_id + 1)
+        token: iid
+        for iid, (token, _) in enumerate(freq_tokens, start=oov_token_id + 1)  # noqa
     }
     # Reverse mapping
     id_to_token = {id: token for token, id in token_to_id.items()}
@@ -85,7 +92,9 @@ logger.info("Done.")
 def encode(text):
     tokens = split_into_tokens(text)
     return torch.tensor(
-        list(map(lambda x: token_to_id.get(x, hyperparams.OOV_TOKEN_ID), tokens)),
+        list(
+            map(lambda x: token_to_id.get(x, hyperparams.OOV_TOKEN_ID), tokens)
+        ),  # noqa: E501
         dtype=torch.long,
     )
 
@@ -103,9 +112,11 @@ def get_batch():
         high=len(input_ids) - hyperparams.BLOCK_SIZE,
         size=(hyperparams.BATCH_SIZE,),
     )
-    x = torch.stack([input_ids[i : i + hyperparams.BLOCK_SIZE] for i in indices])
+    x = torch.stack(
+        [input_ids[i : i + hyperparams.BLOCK_SIZE] for i in indices]  # noqa
+    )
     y = torch.stack(
-        [input_ids[i + 1 : i + hyperparams.BLOCK_SIZE + 1] for i in indices]
+        [input_ids[i + 1 : i + hyperparams.BLOCK_SIZE + 1] for i in indices]  # noqa
     )
     return x, y
 
@@ -186,32 +197,40 @@ for step in range(1, hyperparams.STEPS + 1):
     tok_per_sec = int(torch.numel(x) // (time.time() - start))
 
     print(
-        f"Step: {step}|{hyperparams.STEPS}, Loss: {loss.item()}, Perplexity: {torch.exp(loss)}, Tok/sec: {tok_per_sec}"
+        f"Step: {step}|{hyperparams.STEPS}, Loss: {loss.item()}, Perplexity: {torch.exp(loss)}, Tok/sec: {tok_per_sec}"  # noqa
     )
 
     model.eval()
     with torch.no_grad():
         random_token = random.choice(list(token_to_id.keys()))
-        generated_tokens = [token_to_id.get(random_token, hyperparams.OOV_TOKEN_ID)]
+        generated_tokens = [
+            token_to_id.get(random_token, hyperparams.OOV_TOKEN_ID)
+        ]  # noqa
         print("Prefix: ", random_token)
         for pos in range(hyperparams.BLOCK_SIZE):
             generated_tensor = (
-                torch.tensor(generated_tokens).unsqueeze(0).to(hyperparams.DEVICE)
+                torch.tensor(generated_tokens)
+                .unsqueeze(0)
+                .to(hyperparams.DEVICE)  # noqa
             )
             hidden_states = model(generated_tensor)
             logits = hidden_states[:, -1, :]
             probabilities = torch.softmax(logits, dim=-1)
-            predicted_token_id = torch.multinomial(probabilities, num_samples=1).item()
-            predicted_token = id_to_token.get(predicted_token_id, hyperparams.OOV_TOKEN)
+            predicted_token_id = torch.multinomial(
+                probabilities, num_samples=1
+            ).item()  # noqa
+            predicted_token = id_to_token.get(
+                predicted_token_id, hyperparams.OOV_TOKEN
+            )  # noqa
             generated_tokens.append(predicted_token_id)
 
         print("Sampled text:", decode(generated_tokens), "\n")
 
 
 logger.info("Saving the model and tokenizer dict...")
-torch.save(model.state_dict(), PATHS.RECURRENT_LM_SAVE_PATH)
+torch.save(model.state_dict(), config.RECURRENT_LM_SAVE_PATH)
 
-with open(PATHS.RECURRENT_LM_TOKENIZER_SAVE_PATH, "w") as file:
+with open(config.RECURRENT_LM_TOKENIZER_SAVE_PATH, "w") as file:
     json.dump(token_to_id, file, indent=4)
 
 logger.info("Saved! Exiting...")

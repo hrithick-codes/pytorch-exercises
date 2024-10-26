@@ -1,10 +1,21 @@
 clean:
+	echo "Cleaning .pyc files and __pycache__ directories..."
 	find . -name "*.pyc" -delete
 	find . -name "__pycache__" -delete
+	echo "Cleanup done."
 
 format:
-	black .
+	echo "Sorting imports.."
 	isort .
+	echo "Sorting complete."
+
+	echo "Formatting Python files with black..."
+	black .
+	echo "Formatting complete."
+
+	echo "Running flake8 for linting..."
+	flake8 .
+	echo "Linting complete."
 
 train-rnn-sentiment-classifier:
 	@echo "==============================================="
