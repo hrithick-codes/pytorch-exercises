@@ -19,7 +19,7 @@ torch.set_float32_matmul_precision("high")
 
 @dataclass
 class Hyperparams:
-    VOCAB_SIZE: int = 13339
+    VOCAB_SIZE: int = 13257 + 1
     SPLITTING_PATTERN: str = r"\w+|[^\w\s]|\s+"
     OOV_TOKEN: str = "<UNK>"
     OOV_TOKEN_ID: int = 1
@@ -41,7 +41,7 @@ config = Config()
 hyperparams = Hyperparams()
 
 logger.info("Reading the text corpus...")
-with open(config.TINY_SHAKESPERE_DATASET, "r") as file:
+with open(config.GOT_BOOK_LANGUAGE_MODELLING, "r") as file:
     content = file.read()
 logger.info("Done")
 

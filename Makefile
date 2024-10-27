@@ -26,4 +26,17 @@ train-rnn-sentiment-classifier:
 	PYTHONPATH=. python3 training_scripts/rnn_classifier.py
 
 train-rnn-lm:
+	@echo "==============================================="
+	@echo "🚀 Starting RNN Next token prediction 🚀"
+	@echo "This may take a while, so grab a coffee! ☕"
+	@echo "Logs and output will be displayed below 👇"
+	@echo "==============================================="
 	PYTHONPATH=. python3 training_scripts/rnn_lm.py
+
+train-cbow:
+	@echo "==============================================="
+	@echo "🚀 Starting Word2Vec CBOW Training 🚀"
+	@echo "This may take a while, so grab a coffee! ☕"
+	@echo "Logs and output will be displayed below 👇"
+	@echo "==============================================="
+	PYTHONPATH=. python3 training_scripts/train_cbow.py
