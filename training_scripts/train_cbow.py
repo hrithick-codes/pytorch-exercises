@@ -10,10 +10,13 @@ from loguru import logger
 from app.config import Config
 from utils.helpers import get_device
 
+torch.manual_seed(1337)
+torch.set_float32_matmul_precision("high")
+
 
 @dataclass
 class Hyperparams:
-    num_context_words: int = 16
+    num_context_words: int = 32
     vocab_size: int = 13257 + 1
     hidden_dim: int = 256
     batch_size: int = 2048
@@ -23,6 +26,9 @@ class Hyperparams:
     oov_token: str = "<UNK>"
     device: str = get_device()
     splitting_pattern: str = r"\w+|[^\w\s]|\s+"
+
+    train_size: float = 0.8
+    val_size: float = 0.1
 
 
 class Word2VecCBOW(nn.Module):
@@ -62,6 +68,8 @@ model = Word2VecCBOW(
     hyperparams.hidden_dim,
 )
 model = model.to(hyperparams.device)
+# Does not support MPS as of now! :(
+# model = torch.compile(model)
 config = Config()
 
 
@@ -116,6 +124,21 @@ indices = encode(content)
 logger.info("Done.")
 
 
+logger.info("Split into train and test...")
+num_tokens = len(indices)
+train_tokens = int(num_tokens * hyperparams.train_size)
+val_tokens = int(num_tokens * hyperparams.val_size)
+test_tokens = int(
+    num_tokens * (1 - hyperparams.train_size - hyperparams.val_size)
+)  # noqa: E501
+
+
+train_indices = indices[0:train_tokens]
+val_indices = indices[train_tokens : train_tokens + val_tokens]  # noqa
+test_indices = indices[-test_tokens]
+logger.info("Done.")
+
+
 def get_batch(indices):
     start_indices = torch.randint(
         low=0,
@@ -161,7 +184,8 @@ optimizer = torch.optim.AdamW(model.parameters())
 
 for epoch in range(hyperparams.num_epochs):
     model.train()
-    context, target = get_batch(indices)
+    # Get training batch
+    context, target = get_batch(train_indices)
 
     context = context.to(hyperparams.device)
     target = target.to(hyperparams.device)
@@ -174,4 +198,15 @@ for epoch in range(hyperparams.num_epochs):
     loss.backward()
     optimizer.step()
 
-    print(f"Epoch {epoch + 1}/{10}, Loss: {loss.item():.4f}")
+    model.eval()
+    with torch.no_grad():
+        # Get validation batch
+        context, target = get_batch(val_indices)
+        context = context.to(hyperparams.device)
+        target = target.to(hyperparams.device)
+        outputs = model(context)
+        val_loss = loss_function(outputs, target)
+
+    print(
+        f"Epoch {epoch + 1}/{10}, Training Loss: {loss.item():.4f}, Val Loss: {val_loss.item():.4f}"  # noqa: E501
+    )
